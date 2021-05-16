@@ -10,9 +10,10 @@ import mypy
 import random
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-import parser
+import argparse
 
 random.seed(0)
+parser = argparse.ArgumentParser()
 parser.add_argument('--exp_name', type=str, help='experiment name', default='dryrun')
 
 
@@ -30,13 +31,14 @@ if __name__ == '__main__':
     net.eval()
     writer = SummaryWriter(f'logs/{args.exp_name}')
     target = torch.tensor([1])
-    for i in tqdm(range(100)):
+    for i in tqdm(range(500)):
         outputs = net(noise)
         loss = loss_fn(outputs, target)
         loss.backward()
         optimizer.step()
+        noise_grid = torchvision.utils.make_grid(noise)
         if i%10 == 0:
-            
-    print()
-    print()
-
+            writer.add_scalar('training loss',
+                loss, i)
+            writer.add_image('optimized_noise', noise_grid, i)
+    
