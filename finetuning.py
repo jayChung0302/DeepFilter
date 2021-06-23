@@ -126,6 +126,7 @@ def main():
                     outputs = net(inputs)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, labels)
+                    # writer.add_scalar('training loss', loss, i)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
