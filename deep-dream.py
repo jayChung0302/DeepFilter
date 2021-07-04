@@ -20,12 +20,15 @@ random.seed(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp_name', type=str, help='experiment name', default='dryrun')
 parser.add_argument('--batch_size', type=int, help='batch size', default='32')
+parser.add_argument('--lr', type=float, help='learning rate', default='0.1')
 parser.add_argument('--correlate_scale', type=float, help='', default='2.5e-5')
 parser.add_argument('--bn_reg_scale', type=float, help='', default='1e2')
-parser.add_argument('--l2_scale', type=float, help='', default='0.0')
+parser.add_argument('--l2_scale', type=float, help='', default='1e-3')
 parser.add_argument('--target_class', type=int, help='', default='-1')
-parser.add_argument('--num_epoch', type=int, help='', default='500')
+parser.add_argument('--num_epoch', type=int, help='', default='5000')
 parser.add_argument('--num_classes', type=int, help='', default='1000')
+# parser.add_argument('--use_amp', type=int, help='', default='False')
+
 
 
 args = parser.parse_args()
@@ -70,11 +73,17 @@ def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
     return deprocess(dreamed_image)
 
 def main():
+    #TODO
+    # 1. Add scheduler
+    # 2. Add mods
+    
     lim_0, lim_1 = 2, 2
     noise = torch.rand((args.batch_size, 3, 224, 224), requires_grad=True, device='cuda')
     loss_fn = nn.CrossEntropyLoss()
-    net = models.resnet50(pretrained=True)
-    optimizer = optim.Adam([noise], lr=0.01, betas=[0.5, 0.9], eps = 1e-8)
+    net = models.resnet50(pretrained=True).cuda()
+    optimizer = optim.Adam([noise], lr=args.lr, betas=[0.5, 0.9], eps = 1e-8)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, \
+            eta_min=0)
     net.eval()
     writer = SummaryWriter(f'logs/{args.exp_name}')
     if args.target_class != -1:
@@ -111,13 +120,12 @@ def main():
         loss = loss + args.l2_scale * torch.norm(inputs_jit, 2)
         loss.backward()
         optimizer.step()
-        inputs_grid = torchvision.utils.make_grid(noise)
-        if i%10 == 0:
-            writer.add_scalar('training loss',
-                loss, i)
+        inputs_grid = torchvision.utils.make_grid(noise, normalize=True)
+        if i%100 == 0:
+            writer.add_scalar('training loss', loss, i)
             writer.add_image('optimized_noise', inputs_grid, i)
             vutils.save_image(noise.data.clone(),
-                              './{}/output_{}.png'.format(args.exp_name, i),
+                              './logs/{}/output_{}.png'.format(args.exp_name, i),
                               normalize=True, scale_each=True, nrow=10)
 
 if __name__ == '__main__':
