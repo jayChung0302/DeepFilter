@@ -21,7 +21,7 @@ from utils import preprocess, deprocess, clip, BatchHook, GroupHook
 random.seed(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp_name', type=str, help='experiment name', default='dryrun')
-parser.add_argument('--on_image', type=bool, help='experiment name', default='False', action='store_true')
+parser.add_argument('--on_image', type=bool, help='', default='False', action='store_true')
 parser.add_argument('--batch_size', type=int, help='batch size', default='32')
 parser.add_argument('--lr', type=float, help='learning rate', default='0.1')
 parser.add_argument('--correlate_scale', type=float, help='', default='2.5e-5')
@@ -30,8 +30,7 @@ parser.add_argument('--l2_scale', type=float, help='', default='1e-3')
 parser.add_argument('--target_class', type=int, help='', default='-1')
 parser.add_argument('--num_epoch', type=int, help='', default='5000')
 parser.add_argument('--num_classes', type=int, help='', default='1000')
-# parser.add_argument('--use_amp', type=int, help='', default='False')
-
+parser.add_argument('--use_amp', type=bool, help='', default='False', action='store_true')
 
 
 args = parser.parse_args()
@@ -77,9 +76,9 @@ def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
 
 def main():
     #TODO
-    # 1. Add scheduler
-    # 2. Add mods
     # 3. Solve leaf node error wit normal image
+    if args.use_amp:
+        from apex import amp
     if args.on_image:
         img = Image.open('./img/Lenna.png')
         mean = [0.485, 0.456, 0.406]
@@ -103,6 +102,7 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
     net = models.resnet50(pretrained=True).cuda()
     optimizer = optim.Adam([noise], lr=args.lr, betas=[0.5, 0.9], eps = 1e-8)
+    net, optimizer = amp.initialize(net, optimizer, opt_level="O1", loss_scale='dynamic')
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=0)
     net.eval()
     writer = SummaryWriter(f'logs/{args.exp_name}')
@@ -141,8 +141,13 @@ def main():
         loss_distr = sum([mod.r_feature for mod in loss_r_feature_layers])
         loss = loss + args.bn_reg_scale * loss_distr # best for noise before BN
         loss = loss + args.l2_scale * torch.norm(inputs_jit, 2)
-        loss.backward()
+        if args.use_amp:
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
         optimizer.step()
+        scheduler.step()
         inputs_grid = torchvision.utils.make_grid(noise, normalize=True)
         if i%100 == 0:
             writer.add_scalar('training loss', loss, i)
