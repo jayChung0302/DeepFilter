@@ -1,4 +1,5 @@
 import torch
+from torch.nn.modules.normalization import GroupNorm
 import torchvision.transforms as transforms
 import cv2
 import numpy as np
@@ -34,14 +35,24 @@ def clip(image_tensor):
     return image_tensor
 
 class FeatureRegHook():
+    
+    def __init__(self, module: torch.nn):
+        self.hook = module.register_forward_hook(self.hook_fn)
+
+    def hook_fn(self, module, input, output):
+        raise NotImplementedError
+
+    def close(self):
+        self.hook.remove()
+
+class BatchHook(FeatureRegHook):
     '''
     https://arxiv.org/abs/1912.08795
     Implementation of the forward hook to track feature statistics and compute a loss on them.
     Will compute mean and variance, and will use l2 as a loss
     '''
-
-    def __init__(self, module: torch.nn):
-        self.hook = module.register_forward_hook(self.hook_fn)
+    def __init__(self):
+        super(BatchHook, self).__init__(self)
 
     def hook_fn(self, module, input, output):
         # hook co compute deepinversion's feature distribution regularization
@@ -57,9 +68,14 @@ class FeatureRegHook():
 
         self.r_feature = r_feature
         # must have no output
+        
 
-    def close(self):
-        self.hook.remove()
+class GroupHook(FeatureRegHook):
+    def __init__(self):
+        super(GroupHook, self).__init__(self)
+    
+    def hook_fn(self, module, input, output):
+        pass
 
 if __name__ == '__main__':
     img = cv2.imread('img/Lenna.png')

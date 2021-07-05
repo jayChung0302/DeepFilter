@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.models as models
+import torchvision.transforms as transforms
 import torchvision.utils as vutils
 
 import numpy as np
@@ -13,12 +14,14 @@ import sys
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import argparse
+import PIL.Image as Image
 # import scipy.ndimage as nd
-from utils import preprocess, deprocess, clip, FeatureRegHook
+from utils import preprocess, deprocess, clip, BatchHook, GroupHook
 
 random.seed(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp_name', type=str, help='experiment name', default='dryrun')
+parser.add_argument('--on_image', type=bool, help='experiment name', default='False', action='store_true')
 parser.add_argument('--batch_size', type=int, help='batch size', default='32')
 parser.add_argument('--lr', type=float, help='learning rate', default='0.1')
 parser.add_argument('--correlate_scale', type=float, help='', default='2.5e-5')
@@ -76,14 +79,31 @@ def main():
     #TODO
     # 1. Add scheduler
     # 2. Add mods
-    
+    # 3. Solve leaf node error wit normal image
+    if args.on_image:
+        img = Image.open('./img/Lenna.png')
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        transform = transforms.Compose([
+            transforms.Resize(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean,std=std)
+        ])
+        noise_org = transform(img).requires_grad_(True)
+        noise = noise_org.unsqueeze(0).repeat(args.batch_size, 1, 1, 1)
+        noise = noise.cuda()
+        loss_fn = nn.CrossEntropyLoss()
+        net = models.resnet50(pretrained=True).cuda()
+        optimizer = optim.Adam([noise_org], lr=0.5, betas=[0.5, 0.9], eps = 1e-8)
+        # 플롯하는 이미지를 noise_org 로 바꿔야 워킹
+    else:
+        noise = torch.rand((args.batch_size, 3, 224, 224), requires_grad=True, device='cuda')
+
     lim_0, lim_1 = 2, 2
-    noise = torch.rand((args.batch_size, 3, 224, 224), requires_grad=True, device='cuda')
     loss_fn = nn.CrossEntropyLoss()
     net = models.resnet50(pretrained=True).cuda()
     optimizer = optim.Adam([noise], lr=args.lr, betas=[0.5, 0.9], eps = 1e-8)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, \
-            eta_min=0)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=0)
     net.eval()
     writer = SummaryWriter(f'logs/{args.exp_name}')
     if args.target_class != -1:
@@ -94,7 +114,10 @@ def main():
     loss_r_feature_layers = []
     for module in net.modules():
         if isinstance(module, nn.BatchNorm2d):
-            loss_r_feature_layers.append(FeatureRegHook(module))
+            loss_r_feature_layers.append(BatchHook(module))
+        if isinstance(module, nn.GroupNorm):
+            loss_r_feature_layers.append(GroupHook(module))
+            
 
     for i in tqdm(range(args.num_epoch)):
         net.zero_grad()
