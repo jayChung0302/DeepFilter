@@ -66,6 +66,21 @@ class BatchHook(FeatureRegHook):
         self.r_feature = r_feature
         
 
+class InstanceHook(FeatureRegHook):
+    def __init__(self, module: torch.nn):
+        super(InstanceHook, self).__init__(module)
+    
+    def hook_fn(self, module, input, output):
+        nch = input[0].shape[1]
+        input = input[0].contiguous().view(nch, -1)
+        mean = input.mean(dim=1)
+        var = input.var(dim=1, unbiased=False)
+
+        r_feature = torch.norm(module.running_var - var, 2) + torch.norm(
+            module.running_mean - mean, 2)
+
+        self.r_feature = r_feature
+
 class GroupHook(FeatureRegHook):
     def __init__(self, module: torch.nn):
         super(GroupHook, self).__init__(module)
