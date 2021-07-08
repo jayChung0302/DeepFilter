@@ -7,7 +7,9 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 
+
 import numpy as np
+import cv2
 import mypy
 import random
 import sys
@@ -51,14 +53,26 @@ def dream(image, model, iterations, lr):
         image.grad.data.zero_()
     return image.cpu().data.numpy()
 
+def get_octave(image:torch.tensor, octave_scale:float=1.4, num_octaves:int=10):
+    images_in_octave = [image]
+    image.size()
+    for octave_index in range(num_octaves):
+        image = F.interpolate(image, (int(image.shape[1] / octave_scale), int(image.shape[0] / octave_scale)), interpolation='nearest')
+        # image = cv2.resize(image, (int(image.shape[1] / octave_scale), int(image.shape[0] / octave_scale)), interpolation='INTER_NEAREST')
+        images_in_octave.append(image)
+        # out = F.interpolate(img, size=128)
+    return images_in_octave
+
+
 def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
     """ Main deep dream method """
     image = preprocess(image).unsqueeze(0).cpu().data.numpy()
 
     # Extract image representations for each octave
-    octaves = [image]
-    for _ in range(num_octaves - 1):
-        octaves.append(nd.zoom(octaves[-1], (1, 1, 1 / octave_scale, 1 / octave_scale), order=1))
+    octaves = get_octave(image)
+    # octaves = [image]
+    # for _ in range(num_octaves - 1):
+    #     octaves.append(nd.zoom(octaves[-1], (1, 1, 1 / octave_scale, 1 / octave_scale), order=1))
 
     detail = np.zeros_like(octaves[-1])
     for octave, octave_base in enumerate(tqdm.tqdm(octaves[::-1], desc="Dreaming")):
