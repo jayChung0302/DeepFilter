@@ -39,8 +39,6 @@ args = parser.parse_args()
 
 def dream(image, model, iterations, lr):
     """ Updates the image to maximize outputs for n iterations """
-    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available else torch.FloatTensor
-    image = Variable(Tensor(image), requires_grad=True)
     for i in range(iterations):
         model.zero_grad()
         out = model(image)
@@ -55,38 +53,34 @@ def dream(image, model, iterations, lr):
 
 def get_octave(image:torch.tensor, octave_scale:float=1.4, num_octaves:int=10):
     images_in_octave = [image]
-    image.size()
-    for octave_index in range(num_octaves):
-        image = F.interpolate(image, (int(image.shape[1] / octave_scale), int(image.shape[0] / octave_scale)), interpolation='nearest')
-        # image = cv2.resize(image, (int(image.shape[1] / octave_scale), int(image.shape[0] / octave_scale)), interpolation='INTER_NEAREST')
+    scale_factor = 1
+    for _ in range(num_octaves):
+        scale_factor = round(scale_factor / octave_scale)
+        image = F.interpolate(image, scale_factor=scale_factor, interpolation='nearest', \
+            recompute_scale_factor=True)
         images_in_octave.append(image)
-        # out = F.interpolate(img, size=128)
     return images_in_octave
 
 
 def deep_dream(image, model, iterations, lr, octave_scale, num_octaves):
     """ Main deep dream method """
-    image = preprocess(image).unsqueeze(0).cpu().data.numpy()
-
     # Extract image representations for each octave
-    octaves = get_octave(image)
-    # octaves = [image]
-    # for _ in range(num_octaves - 1):
-    #     octaves.append(nd.zoom(octaves[-1], (1, 1, 1 / octave_scale, 1 / octave_scale), order=1))
+    octaves = get_octave(image, octave_scale, num_octaves)
 
-    detail = np.zeros_like(octaves[-1])
+    detail = torch.zeros_like(octaves[-1])
     for octave, octave_base in enumerate(tqdm.tqdm(octaves[::-1], desc="Dreaming")):
         if octave > 0:
             # Upsample detail to new octave dimension
-            detail = nd.zoom(detail, np.array(octave_base.shape) / np.array(detail.shape), order=1)
+            detail = F.interpolate(detail, (octave_base.shape[-2], octave_base.shape[-1]), \
+                interpolation='nearest', recompute_scale_factor=True)
         # Add deep dream detail from previous octave to new base
         input_image = octave_base + detail
         # Get new deep dream image
         dreamed_image = dream(input_image, model, iterations, lr)
         # Extract deep dream details
         detail = dreamed_image - octave_base
-
-    return deprocess(dreamed_image)
+    return dreamed_image
+    # return deprocess(dreamed_image)
 
 def main():
     if args.use_amp:
