@@ -96,6 +96,15 @@ class GroupHook(FeatureRegHook):
             module.running_mean - mean, 2)
 
         self.r_feature = r_feature
+
+class CamHook(FeatureRegHook):
+    def __init__(self, module: torch.nn):
+        super(CamHook, self).__init__(module)
+    
+    def hook_fn(self, module, input, output):
+        r_feature = output[0].contiguous() + input[0].contiguous()
+        
+        self.r_feature = r_feature
         
 if __name__ == '__main__':
     img = cv2.imread('img/Lenna.png')
